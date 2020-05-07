@@ -17,10 +17,16 @@ setwd('C:/Users/Logan/Google Drive/research/side_projects/mildrexler_oregon_fore
 trees.dt <- fread('data/fia/WAORID_fia_tree_surveys.csv')
 plots.dt <- fread('data/fia/WAORID_fia_plots.csv')
 sp.codes.dt <- fread('data/fia/REF_SPECIES.CSV')
-spgrp.codes.dt <- fread('data/fia/REF_SPECIES_GROUP.CSV')
-nf.shp <- readOGR('data/gis_data/eastside_national_forests_nad83.shp')
+nf.all.shp <- readOGR('data/gis_data/S_USA.AdministrativeForest.shp')
 
 
+# SUBSET SHAPEFILE TO NATIONAL FORESTS USED IN ANALYSIS ----------------------------------------------------------------------
+nf.oi <- paste(c('Deschutes','Fremont-Winema','Malheur','Ochoco','Umatilla','Wallowa-Whitman'), 'National Forest', sep=' ')
+nf.shp <- nf.all.shp[nf.all.shp$FORESTNAME %in% nf.oi, ]
+writeOGR(nf.shp, 'data/gis_data/eastside_national_forests.shp', layer = 'nat_forest', driver = 'ESRI Shapefile', overwrite_layer = T)
+plot(nf.shp)
+
+  
 # IDENTIFY PLOTS TO USE IN ANALYSIS ----------------------------------------------------------------------
 names(plots.dt) <- tolower(names(plots.dt))
 plots.dt <- plots.dt[, plot.id := paste(statecd, plot, sep='.')]
@@ -46,7 +52,7 @@ plots.dt <- plots.dt[, ..keep.cols]
 plots.pt <- SpatialPointsDataFrame(coords = data.frame(plots.dt$lon, plots.dt$lat), data = plots.dt, proj4string = nad83)
 plot(nf.shp, col = 'gray')
 points(plots.pt, col = 'blue', pch = '*', cex = 0.5)
-writeOGR(plots.pt, 'data/gis_data/eastside_fia_plots_post2010survey_wgs84.shp', layer = 'plots', driver = 'ESRI Shapefile', overwrite_layer = T)
+writeOGR(plots.pt, 'data/gis_data/eastside_nf_fia_plots_gte2010surveys.shp', layer = 'plots', driver = 'ESRI Shapefile', overwrite_layer = T)
 
 
 # ADD ANCILLARY DATA TO TREE SURVEYS ---------------------------------------------------------------------
@@ -87,6 +93,9 @@ tree.agc.by.sp.dbh.dt <- tree.agc.by.sp.dbh.dt[order(common.name,dia.in.rnd)]
 tree.agc.by.sp.dbh.dt <- tree.agc.by.sp.dbh.dt[, ':='(agc.cum.pcnt = cumsum(agc.pcnt), stems.cum.pcnt = cumsum(stems.pcnt)), by = c('common.name')]
 tree.agc.by.sp.dbh.dt <- tree.agc.by.sp.dbh.dt[, ':='(agc.cum.pcnt.rev = 100-agc.cum.pcnt, stems.cum.pcnt.rev = 100 - stems.cum.pcnt)]
 
+# cumulative % of stems and biomass in trees < 21" DBH
+tree.agc.by.sp.dbh.dt[dia.in.rnd == 20,c(1,7,8)]
+
 # plot cumulative % of stems by DBH for each species  
 tree.stems.by.sp.dbh.fig <- ggplot(tree.agc.by.sp.dbh.dt, aes(dia.in.rnd, stems.cum.pcnt, group = common.name)) + 
   geom_line(aes(color = common.name)) + scale_color_discrete(name = 'Species') + 
@@ -107,6 +116,5 @@ jpeg('figures/SpStemCntAGC_by_DBH.jpg', width = 10, height = 4, res = 400, units
 ggarrange(tree.stems.by.sp.dbh.fig, tree.agc.by.sp.dbh.fig, labels=c('(a)','(b)'), label.x = 0.15, label.y = 0.98)
 dev.off()
 
-tree.agc.by.sp.dbh.dt[dia.in.rnd == 20]
 
-tree.agc.by.sp.dbh.dt[dia.in.rnd == 20,c(1,7,8)]
+# MORE TO COME... ----------------------------------------------------------------------
