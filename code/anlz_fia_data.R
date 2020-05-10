@@ -29,7 +29,7 @@ plot(nf.shp)
   
 # IDENTIFY PLOTS TO USE IN ANALYSIS ----------------------------------------------------------------------
 names(plots.dt) <- tolower(names(plots.dt))
-plots.dt <- plots.dt[, plot.id := paste(statecd, plot, sep='.')]
+plots.dt <- plots.dt[, plot.id := paste(statecd, plot, sep='.')] # create unique identifier
 plots.dt[, measyear.recent := max(measyear), by = plot.id] # compute most recent year of survey at each plot
 plots.dt <- plots.dt[measyear == measyear.recent] # take most recent survey
 plots.dt <- plots.dt[measyear >= 2010] # use plots meaasured since 2010
@@ -39,7 +39,7 @@ plots.pt <- SpatialPointsDataFrame(coords = data.frame(plots.dt$lon, plots.dt$la
 plot(nf.shp, col = 'gray')
 points(plots.pt, col = 'blue', pch = '*', cex = 0.5)
 
-# extract natl forest name
+# extract natl forest name to each plot
 plots.dt[, nf.name := over(plots.pt, nf.shp)[,5]]
 
 # take 'sampled' plots from eastside natl forests
@@ -66,7 +66,7 @@ trees.dt <- trees.dt[is.na(nf.name) == F] # take trees from select natl forests
 sp.codes.dt <- sp.codes.dt[, c('spcd','common_name','genus')]
 trees.dt <- sp.codes.dt[trees.dt, on = 'spcd']
 
-# take only live tree from subplots (not microplots or macroplots)
+# take only live tree from subplots that were surveyed (not microplots or macroplots)
 trees.dt <- trees.dt[statuscd == 1] 
 trees.dt <- trees.dt[tpa_unadj == 6.018046]
 
