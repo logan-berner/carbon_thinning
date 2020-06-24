@@ -72,15 +72,20 @@ tree.dt <- tree.dt[, ..keep.cols]
 # rename some cols
 setnames(tree.dt, c('common_name','dia','ht','carbon_ag'), c('common.name','dia.in','ht.in','agc.lb'))
 
-# # collapse some species into 'other' category
-# tree.dt[common.name != 'ponderosa pine' & common.name != 'Douglas-fir' & common.name != 'western larch' & common.name != 'grand fir', common.name := 'other']
-# tree.dt[, common.name := factor(common.name, levels = c('Douglas-fir','grand fir','ponderosa pine','western larch','other'))]
+# convert agc from lb to kg
+tree.dt[, agc.kg := agc.lb / 2.2046]
+
+# select species of interest
+tree.dt <- tree.dt[common.name == 'grand fir' | common.name == 'ponderosa pine' | common.name == 'Douglas-fir' | common.name == 'western larch']
+
+# collapse PIPO, PSME, and LAOX into one 'mixed' species class
+tree.dt <- tree.dt[common.name == 'ponderosa pine' | common.name == 'Douglas-fir' | common.name == 'western larch', common.name := 'mixed']
+
+# round off tree diameter
+tree.dt[, dia.in.rnd := round(dia.in,1)]
 
 
 # ASSESS FRACTION OF LARGE TREES BY DBH FOR EACH SPECIES ON FIA PLOTS USING BOOTSTRAP SAMPLING TO GET UNCERTAINTY ----------------
-tree.dt <- tree.dt[common.name == 'ponderosa pine' | common.name == 'grand fir']
-tree.dt[, dia.in.rnd := round(dia.in)]
-
 n.mc <- 10000
 frac.mc <- 1/3
 
@@ -95,9 +100,9 @@ for (i in 1:n.mc){
 tree.mc.dt <- rbindlist(tree.mc.lst)
 
 
-lrg.tree.agc.by.sp.dbh.mc.dt <- tree.mc.dt[dia.in >= 21, .(n.stems = sum(tpa_unadj)), by = c('common.name','dia.in.rnd','rep')] # apply expansion factor
-lrg.tree.agc.by.sp.dbh.mc.dt <- lrg.tree.agc.by.sp.dbh.mc.dt[, stem.frac := n.stems / sum(n.stems), by = c('common.name','rep')]
-lrg.tree.agc.by.sp.dbh.mc.dt <- lrg.tree.agc.by.sp.dbh.mc.dt[, n.stems := NULL]
+lrg.tree.agc.by.sp.dbh.mc.dt <- tree.mc.dt[dia.in >= 21, .(agc.kg.per.tree = mean(agc.kg), stems.n = sum(tpa_unadj)), by = c('common.name','dia.in.rnd','rep')] # apply expansion factor
+lrg.tree.agc.by.sp.dbh.mc.dt <- lrg.tree.agc.by.sp.dbh.mc.dt[, stem.frac := stems.n / sum(stems.n), by = c('common.name','rep')]
+lrg.tree.agc.by.sp.dbh.mc.dt <- lrg.tree.agc.by.sp.dbh.mc.dt[, stems.n := NULL]
 lrg.tree.agc.by.sp.dbh.mc.dt <- lrg.tree.agc.by.sp.dbh.mc.dt[order(common.name,dia.in.rnd,rep)]
 
 # ESTIMATE SNOW BASIN REMOVAL / REMAINING -------------------------------------------------------------------------------------
@@ -107,45 +112,37 @@ sb.sizecls.mc.dt <- merge(sb.dt, lrg.tree.agc.by.sp.dbh.mc.dt, allow.cartesian=T
 # calc number of trees in each size class for each species and treatment 
 sb.sizecls.mc.dt <- sb.sizecls.mc.dt[, n.trees := total.acres * lrg.tree.per.acre * stem.frac]
 
-# calc AGC of trees in each size class using Chojnacky et al. (2014) allometry for True Firs and Pine
-sb.sizecls.mc.dt[common.name == 'grand fir', agc.kg.per.tree := exp(-2.5384 + 2.4814 * log(dia.in.rnd/2.54))*0.5]
-sb.sizecls.mc.dt[common.name == 'ponderosa pine', agc.kg.per.tree := exp(-2.5356 + 2.4349 * log(dia.in.rnd/2.54))*0.5]
-
 # calc total tree AGC by size class
 sb.sizecls.mc.dt <- sb.sizecls.mc.dt[, agc.kg.total.dbh := n.trees * agc.kg.per.tree]
 
 # calc total tree AGC for each species and treatment
 sb.tx.mc.dt <- sb.sizecls.mc.dt[, .(agc.kg.tx.total = sum(agc.kg.total.dbh)), by = c('common.name','biophys','treatment','rep') ]
-sb.tx.mc.dt <- sb.tx.mc.dt[, agc.ston.tx.total := agc.kg.tx.total / 908] # kg per short ton
-sb.tx.mc.dt <- sb.tx.mc.dt[, agc.pcnt.tx := agc.ston.tx.total / sum(agc.ston.tx.total) * 100, by = c('common.name','biophys','rep')]
+sb.tx.mc.dt <- sb.tx.mc.dt[, agc.gg.tx.total := agc.kg.tx.total / 10^6] # kg per gigagram
+sb.tx.mc.dt <- sb.tx.mc.dt[, agc.pcnt.tx := agc.gg.tx.total / sum(agc.gg.tx.total) * 100, by = c('common.name','biophys','rep')]
 
 # compute overall remove / retention
 sb.tx.mc.overall.dt <- sb.tx.mc.dt[, .(common.name = 'overall', biophys = 'overall', 
-                                       agc.kg.tx.total = sum(agc.kg.tx.total), agc.ston.tx.total = sum(agc.ston.tx.total)), by = c('treatment','rep')]
-sb.tx.mc.overall.dt[, agc.pcnt.tx := agc.ston.tx.total / sum(agc.ston.tx.total) * 100, by = rep]
+                                       agc.gg.tx.total = sum(agc.gg.tx.total)), by = c('treatment','rep')]
+sb.tx.mc.overall.dt[, agc.pcnt.tx := agc.gg.tx.total / sum(agc.gg.tx.total) * 100, by = rep]
 
 # combine treatment totals with overall total
 sb.tx.mc.dt <- rbind(sb.tx.mc.dt, sb.tx.mc.overall.dt)
 
 # summarize across monte carlo reps
-sb.tx.mc.smry.dt <- sb.tx.mc.dt[, .(agc.kg.tx.total.med = round(median(agc.kg.tx.total)),
-                                    agc.kg.tx.total.q025 = round(quantile(agc.kg.tx.total, 0.025), 1),
-                                    agc.kg.tx.total.q975 = round(quantile(agc.kg.tx.total, 0.975), 1),
-                                    agc.ston.tx.total.med = round(median(agc.ston.tx.total)),
-                                    agc.ston.tx.total.q025 = round(quantile(agc.ston.tx.total, 0.025), 1),
-                                    agc.ston.tx.total.q975 = round(quantile(agc.ston.tx.total, 0.975), 1),
+sb.tx.mc.smry.dt <- sb.tx.mc.dt[, .(agc.gg.tx.total.med = round(median(agc.gg.tx.total),1),
+                                    agc.gg.tx.total.q025 = round(quantile(agc.gg.tx.total, 0.025), 1),
+                                    agc.gg.tx.total.q975 = round(quantile(agc.gg.tx.total, 0.975), 1),
                                     agc.pcnt.tx.med = round(median(agc.pcnt.tx),1),
                                     agc.pcnt.tx.q025 = round(quantile(agc.pcnt.tx, 0.025), 1),
                                     agc.pcnt.tx.q975 = round(quantile(agc.pcnt.tx, 0.975), 1)),
                                 by = c('common.name', 'biophys','treatment')]
 
 # fancy table 
-sb.tx.fancy.table <- sb.tx.mc.smry.dt[, .(agc.kg.tx.total = paste0(sprintf('%.0f', agc.kg.tx.total.med),' [', sprintf('%.0f', agc.kg.tx.total.q025),', ', sprintf('%.0f', agc.kg.tx.total.q975),']'),
-                                          agc.ston.tx.total = paste0(sprintf('%.0f', agc.ston.tx.total.med),' [', sprintf('%.0f', agc.ston.tx.total.q025),', ', sprintf('%.0f', agc.ston.tx.total.q975),']'),
+sb.tx.fancy.table <- sb.tx.mc.smry.dt[, .(agc.gg.tx.total = paste0(sprintf('%.1f', agc.gg.tx.total.med),' [', sprintf('%.1f', agc.gg.tx.total.q025),', ', sprintf('%.1f', agc.gg.tx.total.q975),']'),
                                           agc.pcnt.tx = paste0(sprintf('%.1f', agc.pcnt.tx.med),' [', sprintf('%.1f', agc.pcnt.tx.q025),', ', sprintf('%.1f', agc.pcnt.tx.q975),']')),
                                       by = c('common.name','biophys','treatment')]
-sb.tx.fancy.table <- dcast(sb.tx.fancy.table, value.var = c('agc.ston.tx.total','agc.pcnt.tx'), formula = common.name + biophys ~ treatment) 
-sb.tx.fancy.table[, common.name := factor(common.name, levels = c('grand fir','ponderosa pine','overall'))]
+sb.tx.fancy.table <- dcast(sb.tx.fancy.table, value.var = c('agc.gg.tx.total','agc.pcnt.tx'), formula = common.name + biophys ~ treatment) 
+sb.tx.fancy.table[, common.name := factor(common.name, levels = c('grand fir','mixed','overall'))]
 sb.tx.fancy.table <- sb.tx.fancy.table[order(common.name)]
 
 # write out
