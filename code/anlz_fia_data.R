@@ -82,6 +82,13 @@ setnames(tree.dt, c('common_name','dia','ht','carbon_ag','tpa_unadj'), c('common
 tree.dt <- tree.dt[common.name == 'Douglas-fir' | common.name == 'grand fir' | common.name == 'ponderosa pine' | common.name == 'western larch' | common.name == "Engelmann spruce"]
 tree.dt[, common.name := factor(common.name, levels = c('Douglas-fir','Engelmann spruce','grand fir','ponderosa pine','western larch'))]
 
+# apply expansion factors for microplots, subplot, and macroplots
+tree.dt <- tree.dt[, ':='(agc.lb = agc.lb*tpa.unadj, stems.n = tpa.unadj)]
+
+# compute number of stems per species and across all species
+tree.dt <- tree.dt[, stems.n.sp := sum(stems.n), by = 'common.name']
+tree.dt <- tree.dt[, stems.n.overall := sum(stems.n)]
+
 
 # RESAMPLE PLOTS USED IN ANALYSIS ----------------------------------------------------------------------
 n.mc <- 10000
@@ -102,28 +109,67 @@ trees.mc.dt <- rbindlist(trees.mc.lst)
 # ASSESS TREE COUNT AND AGC BY DBH ----------------------------------------------------------------------
 trees.mc.dt[, dia.in.rnd := round(dia.in,1)]
 
-# apply adjustment factors for microplots, subplot, and macroplots
-tree.agc.by.sp.dbh.mc.dt <- trees.mc.dt[, .(tot.agc.lb = sum(agc.lb*tpa.unadj), n.stems = sum(tpa.unadj)), by = c('common.name','dia.in.rnd','rep')]
-tree.agc.by.sp.dbh.mc.dt <- tree.agc.by.sp.dbh.mc.dt[, ':='(agc.pcnt = tot.agc.lb / sum(tot.agc.lb) * 100, total.stems = sum(n.stems), stems.pcnt = n.stems / sum(n.stems) * 100), by = c('common.name','rep')]
-tree.agc.by.sp.dbh.mc.dt <- tree.agc.by.sp.dbh.mc.dt[order(rep,common.name,dia.in.rnd)]
-tree.agc.by.sp.dbh.mc.dt <- tree.agc.by.sp.dbh.mc.dt[, ':='(agc.cum.pcnt = cumsum(agc.pcnt), stems.cum.pcnt = cumsum(stems.pcnt)), by = c('common.name','rep')]
-tree.agc.by.sp.dbh.mc.dt <- tree.agc.by.sp.dbh.mc.dt[, ':='(agc.cum.pcnt.abv = 100-agc.cum.pcnt, stems.cum.pcnt.abv = 100 - stems.cum.pcnt)]
+# summarize by species
+tree.agc.by.sp.dbh.mc.dt <- trees.mc.dt[, .(agc.lb.sp.dbh.mc = sum(agc.lb), 
+                                            stems.n.sp.dbh.mc = sum(stems.n), 
+                                            stems.n.sp = mean(stems.n.sp)), 
+                                        by = c('common.name','dia.in.rnd','rep')]
 
-tree.agc.by.sp.dbh.smry.dt <- tree.agc.by.sp.dbh.mc.dt[, .(total.stems.med = round(median(total.stems)),
-                                                           total.stems.q025 = round(quantile(total.stems, 0.025), 1),
-                                                           total.stems.q975 = round(quantile(total.stems, 0.975), 1),
-                                                           agc.cum.pcnt.med = round(median(agc.cum.pcnt), 1),
-                                                           agc.cum.pcnt.q025 = round(quantile(agc.cum.pcnt, 0.025), 1),
-                                                           agc.cum.pcnt.q975 = round(quantile(agc.cum.pcnt, 0.975), 1),
-                                                           agc.cum.pcnt.abv.med = round(median(agc.cum.pcnt.abv), 1),
-                                                           agc.cum.pcnt.abv.q025 = round(quantile(agc.cum.pcnt.abv, 0.025), 1),
-                                                           agc.cum.pcnt.abv.q975 = round(quantile(agc.cum.pcnt.abv, 0.975), 1),
-                                                           stems.cum.pcnt.med = round(median(stems.cum.pcnt), 1),
-                                                           stems.cum.pcnt.q025 = round(quantile(stems.cum.pcnt, 0.025), 1),
-                                                           stems.cum.pcnt.q975 = round(quantile(stems.cum.pcnt, 0.975), 1),
-                                                           stems.cum.pcnt.abv.med = round(median(stems.cum.pcnt.abv), 1),
-                                                           stems.cum.pcnt.abv.q025 = round(quantile(stems.cum.pcnt.abv, 0.025), 1), 
-                                                           stems.cum.pcnt.abv.q975 = round(quantile(stems.cum.pcnt.abv, 0.975), 1)), 
+tree.agc.by.sp.dbh.mc.dt <- tree.agc.by.sp.dbh.mc.dt[, ':='(agc.pcnt.sp.dbh.mc = agc.lb.sp.dbh.mc / sum(agc.lb.sp.dbh.mc) * 100, 
+                                                            stems.n.sp.mc = sum(stems.n.sp.dbh.mc), 
+                                                            stems.pcnt.sp.dbh.mc = stems.n.sp.dbh.mc / sum(stems.n.sp.dbh.mc) * 100), 
+                                                     by = c('common.name','rep')]
+
+tree.agc.by.sp.dbh.mc.dt <- tree.agc.by.sp.dbh.mc.dt[order(rep,common.name,dia.in.rnd)]
+
+tree.agc.by.sp.dbh.mc.dt <- tree.agc.by.sp.dbh.mc.dt[, ':='(agc.cum.pcnt.sp.dbh.mc = cumsum(agc.pcnt.sp.dbh.mc), 
+                                                            stems.cum.pcnt.sp.dbh.mc = cumsum(stems.pcnt.sp.dbh.mc)), 
+                                                     by = c('common.name','rep')]
+
+tree.agc.by.sp.dbh.mc.dt <- tree.agc.by.sp.dbh.mc.dt[, ':='(agc.cum.pcnt.abv.sp.dbh.mc = 100-agc.cum.pcnt.sp.dbh.mc, 
+                                                            stems.cum.pcnt.abv.sp.dbh.mc = 100 - stems.cum.pcnt.sp.dbh.mc)]
+
+# summarize across all species 
+tree.agc.by.dbh.mc.dt <- trees.mc.dt[, .(common.name = 'overall', 
+                                         agc.lb.sp.dbh.mc = sum(agc.lb), 
+                                         stems.n.sp.dbh.mc = sum(stems.n), 
+                                         stems.n.sp = mean(stems.n.overall)), 
+                                     by = c('dia.in.rnd','rep')]
+
+tree.agc.by.dbh.mc.dt <- tree.agc.by.dbh.mc.dt[, ':='(agc.pcnt.sp.dbh.mc = agc.lb.sp.dbh.mc / sum(agc.lb.sp.dbh.mc) * 100, 
+                                                            stems.n.sp.mc = sum(stems.n.sp.dbh.mc), 
+                                                            stems.pcnt.sp.dbh.mc = stems.n.sp.dbh.mc / sum(stems.n.sp.dbh.mc) * 100), 
+                                                     by = c('rep')]
+
+tree.agc.by.dbh.mc.dt <- tree.agc.by.dbh.mc.dt[order(rep,dia.in.rnd)]
+
+tree.agc.by.dbh.mc.dt <- tree.agc.by.dbh.mc.dt[, ':='(agc.cum.pcnt.sp.dbh.mc = cumsum(agc.pcnt.sp.dbh.mc), 
+                                                            stems.cum.pcnt.sp.dbh.mc = cumsum(stems.pcnt.sp.dbh.mc)), 
+                                                     by = c('rep')]
+
+tree.agc.by.dbh.mc.dt <- tree.agc.by.dbh.mc.dt[, ':='(agc.cum.pcnt.abv.sp.dbh.mc = 100-agc.cum.pcnt.sp.dbh.mc, 
+                                                            stems.cum.pcnt.abv.sp.dbh.mc = 100 - stems.cum.pcnt.sp.dbh.mc)]
+
+# combine species-level and cross-species summaries
+tree.agc.by.sp.dbh.mc.dt <- rbind(tree.agc.by.sp.dbh.mc.dt, tree.agc.by.dbh.mc.dt)
+
+# summarize across MC reps   
+tree.agc.by.sp.dbh.smry.dt <- tree.agc.by.sp.dbh.mc.dt[, .(stems.n.sp = round(median(stems.n.sp)),
+                                                           stems.n.mc.med = round(median(stems.n.sp.mc)),
+                                                           stems.n.mc.q025 = round(quantile(stems.n.sp.mc, 0.025), 1),
+                                                           stems.n.mc.q975 = round(quantile(stems.n.sp.mc, 0.975), 1),
+                                                           agc.cum.pcnt.med = round(median(agc.cum.pcnt.sp.dbh.mc), 1),
+                                                           agc.cum.pcnt.q025 = round(quantile(agc.cum.pcnt.sp.dbh.mc, 0.025), 1),
+                                                           agc.cum.pcnt.q975 = round(quantile(agc.cum.pcnt.sp.dbh.mc, 0.975), 1),
+                                                           agc.cum.pcnt.abv.med = round(median(agc.cum.pcnt.abv.sp.dbh.mc), 1),
+                                                           agc.cum.pcnt.abv.q025 = round(quantile(agc.cum.pcnt.abv.sp.dbh.mc, 0.025), 1),
+                                                           agc.cum.pcnt.abv.q975 = round(quantile(agc.cum.pcnt.abv.sp.dbh.mc, 0.975), 1),
+                                                           stems.cum.pcnt.med = round(median(stems.cum.pcnt.sp.dbh.mc), 1),
+                                                           stems.cum.pcnt.q025 = round(quantile(stems.cum.pcnt.sp.dbh.mc, 0.025), 1),
+                                                           stems.cum.pcnt.q975 = round(quantile(stems.cum.pcnt.sp.dbh.mc, 0.975), 1),
+                                                           stems.cum.pcnt.abv.med = round(median(stems.cum.pcnt.abv.sp.dbh.mc), 1),
+                                                           stems.cum.pcnt.abv.q025 = round(quantile(stems.cum.pcnt.abv.sp.dbh.mc, 0.025), 1), 
+                                                           stems.cum.pcnt.abv.q975 = round(quantile(stems.cum.pcnt.abv.sp.dbh.mc, 0.975), 1)), 
                                                        by = c('common.name', 'dia.in.rnd')]
 
 # plot cumulative % of stems by DBH for each species
@@ -156,7 +202,8 @@ fivenum(tree.dt$measyear)
 
 # table showing % of tree stems and AGB in trees <21"
 fancy.table <- tree.agc.by.sp.dbh.smry.dt[dia.in.rnd == 20.9]
-fancy.table <- fancy.table[, .(total.stems = paste0(sprintf('%.0f', total.stems.med),' [', sprintf('%.0f', total.stems.q025),', ', sprintf('%.0f', total.stems.q975),']'),
+fancy.table <- fancy.table[, .(stems.n.sp = sprintf('%.0f', stems.n.sp),
+                               stems.n.mc.med = paste0(sprintf('%.0f', stems.n.mc.med),' [', sprintf('%.0f', stems.n.mc.q025),', ', sprintf('%.0f', stems.n.mc.q975),']'),
                                stems.cum.pcnt = paste0(sprintf('%.1f', stems.cum.pcnt.med),' [', sprintf('%.1f', stems.cum.pcnt.q025),', ', sprintf('%.1f', stems.cum.pcnt.q975),']'),
                                agc.cum.pcnt = paste0(sprintf('%.1f', agc.cum.pcnt.med),' [', sprintf('%.1f', agc.cum.pcnt.q025),', ', sprintf('%.1f', agc.cum.pcnt.q975),']'),
                                stems.cum.pcnt.abv = paste0(sprintf('%.1f', stems.cum.pcnt.abv.med),' [', sprintf('%.1f', stems.cum.pcnt.abv.q025),', ', sprintf('%.1f', stems.cum.pcnt.abv.q975),']'),
@@ -165,54 +212,51 @@ fancy.table <- fancy.table[, .(total.stems = paste0(sprintf('%.0f', total.stems.
 fwrite(fancy.table, 'output/tree_stems_agc_blw_21in_on_natl_forest.csv')
 
 
-# WORK IN PROGRESS ... COMPUTE AVERAGE DENSITY OF LARGE TREES ON LANDSCAPE ------------------------------------------------
-# question: How to handle plots that do not include four forested subplots?
-sqft.per.subplot <- (pi*24^2) # each subplot has a 24 ft radius 
-sqft.per.acre <- 43560 # there are 43560 ft2 / acre
-
-# compute tree density on each subplot  
-tree.dens.subp.dt <- tree.dt[, .(n.trees = .N), by = c('nf.name','plot.id','subp')]
-tree.lrg.dens.dt <- tree.dt[dia.in >= 21, .(n.lrg.trees = .N), by = c('nf.name','plot.id','subp')]
-tree.dens.subp.dt <- tree.lrg.dens.dt[tree.dens.subp.dt, on = c('nf.name','plot.id','subp')]
-tree.dens.subp.dt[is.na(n.lrg.trees), n.lrg.trees := 0]
-tree.dens.subp.dt <- tree.dens.subp.dt[, ':='(lrg.trees.per.acre = n.lrg.trees / (sqft.per.subplot) * sqft.per.acre,
-                    trees.per.acre = n.trees / (sqft.per.subplot) * sqft.per.acre)]
-tree.dens.subp.dt <- tree.dens.subp.dt[order(plot.id,subp)]
-
-# compute average tree density on each plot
-tree.dens.dt <- tree.dens.subp.dt[, .(trees.per.acre.avg = mean(trees.per.acre), lrg.trees.per.acre.avg = mean(lrg.trees.per.acre)), by = c('nf.name','plot.id')]
-
-# summarize tree density across each national forest
-tree.dens.smry.by.nf.dt <- tree.dens.dt[, .(n.plots = .N,
-                                            trees.per.acre.med = median(trees.per.acre.avg),
-                                            trees.per.acre.q025 = quantile(trees.per.acre.avg, 0.025),
-                                            trees.per.acre.q25 = quantile(trees.per.acre.avg, 0.25),
-                                            trees.per.acre.q75 = quantile(trees.per.acre.avg, 0.75),
-                                            trees.per.acre.q975 = quantile(trees.per.acre.avg, 0.975),
-                                            lrg.trees.per.acre.med = median(lrg.trees.per.acre.avg),
-                                            lrg.trees.per.acre.q025 = quantile(lrg.trees.per.acre.avg, 0.025),
-                                            lrg.trees.per.acre.q25 = quantile(lrg.trees.per.acre.avg, 0.25),
-                                            lrg.trees.per.acre.q75 = quantile(lrg.trees.per.acre.avg, 0.75),
-                                            lrg.trees.per.acre.q975 = quantile(lrg.trees.per.acre.avg, 0.975)),
-                                            by = nf.name]
-
-tree.dens.smry.by.nf.dt <- tree.dens.smry.by.nf.dt[order(nf.name)]
-rnd.cols <- names(tree.dens.smry.by.nf.dt)[-1]
-tree.dens.smry.by.nf.dt[, (rnd.cols) := round(.SD, 1), .SDcols = rnd.cols] # round tree density to one decimal
-tree.dens.smry.by.nf.dt
-
-# make fancy output table
-tree.dens.smry.by.nf.fancy.dt <- tree.dens.smry.by.nf.dt[, 1:2]
-tree.dens.smry.by.nf.fancy.dt$trees.per.acre <- paste0(sprintf('%.1f', tree.dens.smry.by.nf.dt$trees.per.acre.med), ' [',
-                                                       sprintf('%.1f', tree.dens.smry.by.nf.dt$trees.per.acre.q025), ', ',
-                                                       sprintf('%.1f', tree.dens.smry.by.nf.dt$trees.per.acre.q975), ']')
-tree.dens.smry.by.nf.fancy.dt$lrg.trees.per.acre <- paste0(sprintf('%.1f', tree.dens.smry.by.nf.dt$lrg.trees.per.acre.med), ' [',
-                                                       sprintf('%.1f', tree.dens.smry.by.nf.dt$lrg.trees.per.acre.q025), ', ',
-                                                       sprintf('%.1f', tree.dens.smry.by.nf.dt$lrg.trees.per.acre.q975), ']')
-fwrite(tree.dens.smry.by.nf.fancy.dt, 'output/tree_density_by_natl_forest.csv')
-
-
-# MORE TO COME... ----------------------------------------------------------------------
+# # WORK IN PROGRESS ... COMPUTE AVERAGE DENSITY OF LARGE TREES ON LANDSCAPE ------------------------------------------------
+# # question: How to handle plots that do not include four forested subplots?
+# sqft.per.subplot <- (pi*24^2) # each subplot has a 24 ft radius 
+# sqft.per.acre <- 43560 # there are 43560 ft2 / acre
+# 
+# # compute tree density on each subplot  
+# tree.dens.subp.dt <- tree.dt[, .(n.trees = .N), by = c('nf.name','plot.id','subp')]
+# tree.lrg.dens.dt <- tree.dt[dia.in >= 21, .(n.lrg.trees = .N), by = c('nf.name','plot.id','subp')]
+# tree.dens.subp.dt <- tree.lrg.dens.dt[tree.dens.subp.dt, on = c('nf.name','plot.id','subp')]
+# tree.dens.subp.dt[is.na(n.lrg.trees), n.lrg.trees := 0]
+# tree.dens.subp.dt <- tree.dens.subp.dt[, ':='(lrg.trees.per.acre = n.lrg.trees / (sqft.per.subplot) * sqft.per.acre,
+#                     trees.per.acre = n.trees / (sqft.per.subplot) * sqft.per.acre)]
+# tree.dens.subp.dt <- tree.dens.subp.dt[order(plot.id,subp)]
+# 
+# # compute average tree density on each plot
+# tree.dens.dt <- tree.dens.subp.dt[, .(trees.per.acre.avg = mean(trees.per.acre), lrg.trees.per.acre.avg = mean(lrg.trees.per.acre)), by = c('nf.name','plot.id')]
+# 
+# # summarize tree density across each national forest
+# tree.dens.smry.by.nf.dt <- tree.dens.dt[, .(n.plots = .N,
+#                                             trees.per.acre.med = median(trees.per.acre.avg),
+#                                             trees.per.acre.q025 = quantile(trees.per.acre.avg, 0.025),
+#                                             trees.per.acre.q25 = quantile(trees.per.acre.avg, 0.25),
+#                                             trees.per.acre.q75 = quantile(trees.per.acre.avg, 0.75),
+#                                             trees.per.acre.q975 = quantile(trees.per.acre.avg, 0.975),
+#                                             lrg.trees.per.acre.med = median(lrg.trees.per.acre.avg),
+#                                             lrg.trees.per.acre.q025 = quantile(lrg.trees.per.acre.avg, 0.025),
+#                                             lrg.trees.per.acre.q25 = quantile(lrg.trees.per.acre.avg, 0.25),
+#                                             lrg.trees.per.acre.q75 = quantile(lrg.trees.per.acre.avg, 0.75),
+#                                             lrg.trees.per.acre.q975 = quantile(lrg.trees.per.acre.avg, 0.975)),
+#                                             by = nf.name]
+# 
+# tree.dens.smry.by.nf.dt <- tree.dens.smry.by.nf.dt[order(nf.name)]
+# rnd.cols <- names(tree.dens.smry.by.nf.dt)[-1]
+# tree.dens.smry.by.nf.dt[, (rnd.cols) := round(.SD, 1), .SDcols = rnd.cols] # round tree density to one decimal
+# tree.dens.smry.by.nf.dt
+# 
+# # make fancy output table
+# tree.dens.smry.by.nf.fancy.dt <- tree.dens.smry.by.nf.dt[, 1:2]
+# tree.dens.smry.by.nf.fancy.dt$trees.per.acre <- paste0(sprintf('%.1f', tree.dens.smry.by.nf.dt$trees.per.acre.med), ' [',
+#                                                        sprintf('%.1f', tree.dens.smry.by.nf.dt$trees.per.acre.q025), ', ',
+#                                                        sprintf('%.1f', tree.dens.smry.by.nf.dt$trees.per.acre.q975), ']')
+# tree.dens.smry.by.nf.fancy.dt$lrg.trees.per.acre <- paste0(sprintf('%.1f', tree.dens.smry.by.nf.dt$lrg.trees.per.acre.med), ' [',
+#                                                        sprintf('%.1f', tree.dens.smry.by.nf.dt$lrg.trees.per.acre.q025), ', ',
+#                                                        sprintf('%.1f', tree.dens.smry.by.nf.dt$lrg.trees.per.acre.q975), ']')
+# fwrite(tree.dens.smry.by.nf.fancy.dt, 'output/tree_density_by_natl_forest.csv')
 
 
 # HOLDING-- PROABLY DELETE ----------------------------------------------------------------------
